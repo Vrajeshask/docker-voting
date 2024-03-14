@@ -7,25 +7,21 @@
 # for example, if you were on Intel (amd64) and wanted to build for ARM, you would use:
 # docker buildx build --platform "linux/arm64/v8" .
 
+FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:7.0 as build
+ARG TARGETPLATFORM
+ARG TARGETARCH
+ARG BUILDPLATFORM
+RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM"
 
-FROM mcr.microsoft.com/dotnet/sdk:7.0 AS builder
-WORKDIR /app
-
-# caches restore result by copying csproj file separately
+WORKDIR /source
 COPY *.csproj .
-RUN dotnet restore
+RUN dotnet restore -a $TARGETARCH
 
 COPY . .
-RUN dotnet publish --output /app/ --configuration Release --no-restore
-RUN sed -n 's:.*<AssemblyName>\(.*\)</AssemblyName>.*:\1:p' *.csproj > __assemblyname
-RUN if [ ! -s __assemblyname ]; then filename=$(ls *.csproj); echo ${filename%.*} > __assemblyname; fi
+RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore
 
-# Stage 2
-FROM mcr.microsoft.com/dotnet/aspnet:7.0
+# app image
+FROM mcr.microsoft.com/dotnet/runtime:7.0
 WORKDIR /app
-COPY --from=builder /app .
-
-ENV PORT 5000
-EXPOSE 5000
-
-ENTRYPOINT dotnet $(cat /app/__assemblyname).dll --urls "http://*:5000"
+COPY --from=build /app .
+ENTRYPOINT ["dotnet", "Worker.dll"]
